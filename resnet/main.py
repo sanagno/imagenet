@@ -16,16 +16,14 @@ import torch.utils.data
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torchvision.models as models
+
+# import torchvision.models as models
+import resnets
 import custom_models
 from torch.utils.tensorboard import SummaryWriter
 
 
-model_names = sorted(
-    name
-    for name in models.__dict__
-    if name.islower() and not name.startswith("__") and callable(models.__dict__[name])
-)
+model_names = resnets.backbones
 
 model_names += ["codebook"]
 
@@ -157,6 +155,9 @@ parser.add_argument(
     "multi node data parallel training",
 )
 
+parser.add_argument(
+    "--nonlinearity", default="ReLU", type=str, choices=["ReLU", "UpLReLUDown"]
+)
 parser.add_argument("--backbone", default="resnet18", type=str)
 parser.add_argument("--codebook_size", default=512, type=int)
 parser.add_argument("--fc_size", default=1024, type=int)
@@ -229,16 +230,25 @@ def main_worker(gpu, ngpus_per_node, args):
             rank=args.rank,
         )
     # create model
+    if args.nonlinearity == "ReLU":
+        nonlinearity = nn.ReLU(inplace=True)
+    elif args.nonlinearity == "UpLReLUDown":
+        nonlinearity = resnets.UpLReLUDown()
+
     if args.pretrained:
         print("=> using pre-trained model '{}'".format(args.arch))
-        if args.arch in models.__dict__:
-            model = models.__dict__[args.arch](pretrained=True)
+        if args.arch in resnets.backbones:
+            model = getattr(resnets, args.arch)(
+                nonlinearity=nonlinearity, pretrained=True
+            )
         else:
             raise NotImplementedError
     else:
         print("=> creating model '{}'".format(args.arch))
-        if args.arch in models.__dict__:
-            model = models.__dict__[args.arch]()
+        if args.arch in resnets.backbones:
+            model = getattr(resnets, args.arch)(
+                nonlinearity=nonlinearity, pretrained=False
+            )
         elif args.arch == "codebook":
 
             backbone = getattr(custom_models, args.backbone)
